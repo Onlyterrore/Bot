@@ -8,7 +8,7 @@ from aiogram.client.bot import DefaultBotProperties
 from aiogram.enums.parse_mode import ParseMode
 
 from aiogram.filters.callback_data import CallbackData
-from aiogram.utils.keyboard import InlineKeyboardBuilder
+from aiogram.utils.keyboard import InlineKeyboardBuilder, ReplyKeyboardMarkup, KeyboardButton
 
 API_TOKEN = "8189643318:AAEjvXhCyKd7uVsp9ZuGMpzKXtj7aqYaPKg"
 
@@ -33,7 +33,7 @@ def load_chat_ids() -> list:
             if isinstance(data, dict) and "chat_ids" in data:
                 return data["chat_ids"]
     except Exception as e:
-        print(f"Ошибка при загрузке списка чатов: {e}")
+        print(f"Ошибка при загрузке chat_ids.json: {e}")
     return []
 
 def save_chat_ids(chat_list: list):
@@ -42,7 +42,7 @@ def save_chat_ids(chat_list: list):
         with open("chat_ids.json", "w", encoding="utf-8") as f:
             json.dump(data, f, indent=4, ensure_ascii=False)
     except Exception as e:
-        print(f"Ошибка при сохранении списка чатов: {e}")
+        print(f"Ошибка при сохранении chat_ids.json: {e}")
 
 # ==============================
 #   ГЛОБАЛЬНЫЙ СПИСОК ГРУПП
@@ -77,7 +77,7 @@ async def cmd_start(message: Message):
         return
     
     await message.answer(
-        text="Привет! Используйте меню, расположенное справа от поля ввода, для рассылки и управления группами.",
+        text="Привет! Используйте кнопки для рассылки и управления группами.",
         reply_markup=get_main_menu()
     )
 
@@ -111,7 +111,7 @@ async def process_broadcast_text(message: Message):
         return
 
     WAITING_FOR_BROADCAST_TEXT.remove(message.from_user.id)
-    BROADCAST_TEXTS[message.from_user.id] = message.text
+    BROADCAST_TEXTS[message.from_user.id] = message.html_text  # Используем html_text для сохранения ссылок
 
     kb = InlineKeyboardBuilder()
     kb.button(text="Да", callback_data=ConfirmBroadcast(decision="yes"))
@@ -134,14 +134,20 @@ async def confirm_broadcast_callback(call: CallbackQuery, callback_data: Confirm
     if callback_data.decision == "yes" and text_for_broadcast:
         bot = call.bot
         success_count = 0
+
+        # Отправляем сообщение с parse_mode="HTML" для сохранения ссылок
         for group in CHAT_IDS:
             try:
-                await bot.send_message(chat_id=group["id"], text=text_for_broadcast)
+                await bot.send_message(
+                    chat_id=group["id"],
+                    text=text_for_broadcast,  # Используем текст с HTML-разметкой
+                    parse_mode="HTML"  # Включаем HTML-разметку
+                )
                 success_count += 1
             except Exception as e:
                 print(f"Ошибка при отправке в чат {group['id']}: {e}")
 
-        await call.message.answer(f"Сообщение разослано в {success_count} групп.")
+        await call.message.answer(f"Сообщение разослано в {success_count} чатов.")
     else:
         await call.message.answer("Рассылка отменена.")
 
@@ -149,78 +155,99 @@ async def confirm_broadcast_callback(call: CallbackQuery, callback_data: Confirm
     await call.answer()
 
 # ==============================
-#   Добавить группу
+#   Добавление группы
 # ==============================
 async def handle_add_group(message: Message):
     if message.from_user.id not in ALLOWED_USERS:
         await message.answer("У вас нет доступа к этому боту.")
         return
-    
-    WAITING_FOR_ADD_GROUP.add(message.from_user.id)
-    await message.answer("Введите chat_id группы (например, -100123456789 или -01234567890).")
 
-async def process_add_group_id(message: Message):
+    WAITING_FOR_ADD_GROUP.add(message.from_user.id)
+    await message.answer("Введите ID группы (chat_id).")
+
+async def process_add_group(message: Message):
     if message.from_user.id not in ALLOWED_USERS:
         await message.answer("У вас нет доступа к этому боту.")
         return
-    
+
+    if message.from_user.id not in WAITING_FOR_ADD_GROUP:
+        await message.answer("Вы не начали процесс добавления группы. Нажмите 'Добавить группу', чтобы начать.")
+        return
+
     WAITING_FOR_ADD_GROUP.remove(message.from_user.id)
-    chat_id_str = message.text.strip()
 
     try:
-        new_id = int(chat_id_str)
-
-        if any(group["id"] == new_id for group in CHAT_IDS):
-            await message.answer("Эта группа уже есть в списке.")
-            return
-
-        bot = message.bot
-        chat_info = await bot.get_chat(new_id)
-        group_name = chat_info.title
-
-        CHAT_IDS.append({"id": new_id, "name": group_name})
-        save_chat_ids(CHAT_IDS)
-
-        await message.answer(f"Группа «{group_name}» (chat_id: {new_id}) добавлена в список!")
+        chat_id = int(message.text)  # Преобразуем ID в число
     except ValueError:
-        await message.answer("Ошибка: нужно ввести числовой chat_id.")
+        await message.answer("Некорректный формат. Введите числовой ID группы.")
+        return
+
+    # Проверяем, есть ли группа уже в списке
+    if any(group["id"] == chat_id for group in CHAT_IDS):
+        await message.answer("Группа с таким ID уже существует.")
+        return
+
+    # Получаем информацию о группе через API Telegram
+    bot = message.bot
+    try:
+        chat_info = await bot.get_chat(chat_id)
+        group_name = chat_info.title  # Получаем название группы
     except Exception as e:
-        await message.answer(f"Не удалось добавить группу. Причина: {e}")
+        await message.answer(f"Не удалось получить информацию о группе. Убедитесь, что бот добавлен в группу и имеет доступ. Ошибка: {e}")
+        return
+
+    # Добавляем группу в список
+    CHAT_IDS.append({"id": chat_id, "name": group_name})
+    save_chat_ids(CHAT_IDS)  # Сохраняем в JSON
+
+    await message.answer(f"Группа '{group_name}' (ID: {chat_id}) успешно добавлена.")
 
 # ==============================
-#   Удалить группу
+#   Удаление группы
 # ==============================
 async def handle_remove_group(message: Message):
     if message.from_user.id not in ALLOWED_USERS:
         await message.answer("У вас нет доступа к этому боту.")
         return
 
-    WAITING_FOR_REMOVE_GROUP.add(message.from_user.id)
-    await message.answer("Введите chat_id группы, которую хотите удалить:")
+    if not CHAT_IDS:
+        await message.answer("Список групп пуст.")
+        return
 
-async def process_remove_group_id(message: Message):
+    WAITING_FOR_REMOVE_GROUP.add(message.from_user.id)
+
+    # Формируем список групп для вывода
+    group_list = "Выберите группу для удаления:\n\n" + "\n".join(
+        [f"{i+1}. {group['name']} (ID: {group['id']})" for i, group in enumerate(CHAT_IDS)]
+    )
+
+    await message.answer(group_list)
+
+async def process_remove_group(message: Message):
     if message.from_user.id not in ALLOWED_USERS:
         await message.answer("У вас нет доступа к этому боту.")
         return
 
+    if message.from_user.id not in WAITING_FOR_REMOVE_GROUP:
+        await message.answer("Вы не начали процесс удаления группы. Нажмите 'Удалить группу', чтобы начать.")
+        return
+
     WAITING_FOR_REMOVE_GROUP.remove(message.from_user.id)
-    chat_id_str = message.text.strip()
 
     try:
-        del_id = int(chat_id_str)
-
-        group_to_remove = next((group for group in CHAT_IDS if group["id"] == del_id), None)
-        if not group_to_remove:
-            await message.answer("Такой группы нет в списке.")
+        group_number = int(message.text)  # Номер группы для удаления
+        if group_number < 1 or group_number > len(CHAT_IDS):
+            await message.answer("Некорректный номер группы.")
             return
-
-        CHAT_IDS.remove(group_to_remove)
-        save_chat_ids(CHAT_IDS)
-        await message.answer(f"Группа «{group_to_remove['name']}» (chat_id: {del_id}) успешно удалена из списка.")
     except ValueError:
-        await message.answer("Ошибка: нужно ввести числовой chat_id.")
-    except Exception as e:
-        await message.answer(f"Не удалось удалить группу. Причина: {e}")
+        await message.answer("Введите номер группы для удаления.")
+        return
+
+    # Удаляем группу из списка
+    removed_group = CHAT_IDS.pop(group_number - 1)
+    save_chat_ids(CHAT_IDS)  # Сохраняем в JSON
+
+    await message.answer(f"Группа '{removed_group['name']}' (ID: {removed_group['id']}) успешно удалена.")
 
 # ==============================
 #   MAIN
@@ -233,9 +260,9 @@ async def main():
     dp.message.register(handle_make_broadcast, lambda msg: msg.text == "Сделать рассылку")
     dp.message.register(process_broadcast_text, lambda msg: msg.from_user.id in WAITING_FOR_BROADCAST_TEXT)
     dp.message.register(handle_add_group, lambda msg: msg.text == "Добавить группу")
-    dp.message.register(process_add_group_id, lambda msg: msg.from_user.id in WAITING_FOR_ADD_GROUP)
+    dp.message.register(process_add_group, lambda msg: msg.from_user.id in WAITING_FOR_ADD_GROUP)
     dp.message.register(handle_remove_group, lambda msg: msg.text == "Удалить группу")
-    dp.message.register(process_remove_group_id, lambda msg: msg.from_user.id in WAITING_FOR_REMOVE_GROUP)
+    dp.message.register(process_remove_group, lambda msg: msg.from_user.id in WAITING_FOR_REMOVE_GROUP)
     dp.callback_query.register(confirm_broadcast_callback, ConfirmBroadcast.filter())
 
     await dp.start_polling(bot)

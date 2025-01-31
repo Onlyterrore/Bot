@@ -5,10 +5,9 @@ import json
 from aiogram import Bot, Dispatcher
 from aiogram.types import Message, CallbackQuery, ReplyKeyboardMarkup, KeyboardButton
 from aiogram.client.bot import DefaultBotProperties
-from aiogram.enums.parse_mode import ParseMode
-
+from aiogram.enums import ParseMode, ChatType
 from aiogram.filters.callback_data import CallbackData
-from aiogram.utils.keyboard import InlineKeyboardBuilder, ReplyKeyboardMarkup, KeyboardButton
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 API_TOKEN = "8189643318:AAEjvXhCyKd7uVsp9ZuGMpzKXtj7aqYaPKg"
 
@@ -85,6 +84,10 @@ async def cmd_start(message: Message):
 #   Сделать рассылку
 # ==============================
 async def handle_make_broadcast(message: Message):
+    # Проверяем, что сообщение пришло из личного чата
+    if message.chat.type != ChatType.PRIVATE:
+        return  # Игнорируем сообщения из групп
+
     if message.from_user.id not in ALLOWED_USERS:
         await message.answer("У вас нет доступа к этому боту.")
         return
@@ -102,6 +105,10 @@ async def handle_make_broadcast(message: Message):
     await message.answer(f"{group_list}\n\nНапишите сообщение, которое хотите разослать во все группы.")
 
 async def process_broadcast_text(message: Message):
+    # Проверяем, что сообщение пришло из личного чата
+    if message.chat.type != ChatType.PRIVATE:
+        return  # Игнорируем сообщения из групп
+
     if message.from_user.id not in ALLOWED_USERS:
         await message.answer("У вас нет доступа к этому боту.")
         return
@@ -158,6 +165,10 @@ async def confirm_broadcast_callback(call: CallbackQuery, callback_data: Confirm
 #   Добавление группы
 # ==============================
 async def handle_add_group(message: Message):
+    # Проверяем, что сообщение пришло из личного чата
+    if message.chat.type != ChatType.PRIVATE:
+        return  # Игнорируем сообщения из групп
+
     if message.from_user.id not in ALLOWED_USERS:
         await message.answer("У вас нет доступа к этому боту.")
         return
@@ -166,6 +177,10 @@ async def handle_add_group(message: Message):
     await message.answer("Введите ID группы (chat_id).")
 
 async def process_add_group(message: Message):
+    # Проверяем, что сообщение пришло из личного чата
+    if message.chat.type != ChatType.PRIVATE:
+        return  # Игнорируем сообщения из групп
+
     if message.from_user.id not in ALLOWED_USERS:
         await message.answer("У вас нет доступа к этому боту.")
         return
@@ -206,6 +221,10 @@ async def process_add_group(message: Message):
 #   Удаление группы
 # ==============================
 async def handle_remove_group(message: Message):
+    # Проверяем, что сообщение пришло из личного чата
+    if message.chat.type != ChatType.PRIVATE:
+        return  # Игнорируем сообщения из групп
+
     if message.from_user.id not in ALLOWED_USERS:
         await message.answer("У вас нет доступа к этому боту.")
         return
@@ -224,6 +243,10 @@ async def handle_remove_group(message: Message):
     await message.answer(group_list)
 
 async def process_remove_group(message: Message):
+    # Проверяем, что сообщение пришло из личного чата
+    if message.chat.type != ChatType.PRIVATE:
+        return  # Игнорируем сообщения из групп
+
     if message.from_user.id not in ALLOWED_USERS:
         await message.answer("У вас нет доступа к этому боту.")
         return
